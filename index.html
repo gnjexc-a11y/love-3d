@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
+    <title>七夕专属·3D粒子爱心</title>
+    <style>
+        /* 核心适配：禁止微信/手机浏览器的橡皮筋回弹效果 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            overscroll-behavior: none;
+            touch-action: none;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        /* 界面控件 */
+        #ui-controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            z-index: 10;
+            width: 90%;
+            pointer-events: none; /* 让点击穿透，不影响旋转 */
+        }
+        /* 按钮样式：半透明磨砂感 */
+        .btn {
+            background: rgba(255, 20, 147, 0.4);
+            border: 1px solid rgba(255, 105, 180, 0.6);
+            color: white;
+            padding: 8px 16px;
+            margin: 0 5px;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            pointer-events: auto; /* 恢复按钮点击 */
+            text-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        #image-upload { display: none; }
+        #loading-text {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255,255,255,0.5);
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+<div id="loading-text">资源加载中...</div>
+
+<div id="ui-controls">
+    <input type="file" id="image-upload" multiple accept="image/*">
+    <button class="btn" onclick="document.getElementById('image-upload').click()">📂 上传照片</button>
+    <button class="btn" id="toggle-mode-btn">❤️ 切换: 烟花</button>
+</div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js"></script>
+
+<script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    let scene, camera, renderer, controls, particleSystem;
+    let particles;
+    const particleCount = 2500; // 粒子数量
+    let currentMode = 'heart'; // heart 或 firework
+    let userTextures = []; 
+    let textureIndex = 0;
+
+    function init() {
+        const container = document.getElementById('canvas-container');
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.002);
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 100;
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.rotateSpeed = 0.8;
+        controls.enablePan = false;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1.5;
+
+        // 用户触摸时暂停自动旋转
+        controls.addEventListener('start', () => { controls.autoRotate = false; });
+
+        document.getElementById('loading-text').style.display = 'none';
+        createParticleSystem();
+        animate();
+    }
+
+    // 核心算法：爱心形状
+    function getHeartPosition(t) {
+        const x = 16 * Math.pow(Math.sin(t), 3);
+        const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+        return new THREE.Vector3(x * 2.5, y * 2.5 + 10, 0);
+    }
+
+    // 核心算法：烟花球体
+    function getSpherePosition(i) {
+        const phi = Math.acos(-1 + (2 * i) / particleCount);
+        const theta = Math.sqrt(particleCount * Math.PI) * phi;
+        const r = 50;
+        return new THREE.Vector3(
+            r * Math.cos(theta) * Math.sin(phi),
+            r * Math.sin(theta) * Math.sin(phi),
+            r * Math.cos(phi)
+        );
+    }
+
+    function createParticleSystem() {
+        if (particleSystem) {
+            scene.remove(particleSystem);
+            particles.dispose();
+        }
+
+        particles = new THREE.BufferGeometry();
+        const positions = [];
+        const colors = [];
+        const sizes = [];
+        const color = new THREE.Color();
+
+        for (let i = 0; i < particleCount; i++) {
+            let pos;
+            if (currentMode === 'heart') {
+                const t = (i / particleCount) * Math.PI * 2;
+                pos = getHeartPosition(t);
+                color.setHSL(0.95 + Math.random() * 0.05, 0.9, 0.6); // 粉红
+            } else {
+                pos = getSpherePosition(i);
+                color.setHSL(Math.random(), 1.0, 0.6); // 彩色
+            }
+
+            // 加一点随机扩散，让粒子不那么死板
+            positions.push(pos.x + (Math.random()-0.5)*2, pos.y + (Math.random()-0.5)*2, pos.z + (Math.random()-0.5)*10);
+            colors.push(color.r, color.g, color.b);
+            sizes.push(currentMode === 'heart' ? 4.0 : 3.0);
+        }
+
+        particles.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        particles.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        particles.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+        // 默认光点纹理
+        const defaultTexture = (() => {
+            const c = document.createElement('canvas'); c.width=32; c.height=32;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(16,16,0,16,16,16);
+            g.addColorStop(0,'rgba(255,255,255,1)');
+            g.addColorStop(1,'rgba(0,0,0,0)');
+            ctx.fillStyle=g; ctx.fillRect(0,0,32,32);
+            return new THREE.CanvasTexture(c);
+        })();
+
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                pointTexture: { value: userTextures.length > 0 ? userTextures[0] : defaultTexture }
+            },
+            vertexShader: `
+                attribute float size;
+                varying vec3 vColor;
+                void main() {
+                    vColor = color;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = size * (300.0 / -mvPosition.z);
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D pointTexture;
+                varying vec3 vColor;
+                void main() {
+                    gl_FragColor = vec4(vColor, 1.0) * texture2D(pointTexture, gl_PointCoord);
+                    if (gl_FragColor.a < 0.3) discard;
+                }
+            `,
+            blending: THREE.AdditiveBlending,
+            depthTest: false,
+            transparent: true,
+            vertexColors: true
+        });
+
+        particleSystem = new THREE.Points(particles, material);
+        scene.add(particleSystem);
+    }
+
+    // 图片上传处理
+    document.getElementById('image-upload').addEventListener('change', (e) => {
+        const files = e.target.files;
+        if (!files.length) return;
+        userTextures = [];
+        let loaded = 0;
+        for (let i=0; i<files.length; i++) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                new THREE.TextureLoader().load(ev.target.result, (tex) => {
+                    userTextures.push(tex);
+                    loaded++;
+                    if (loaded === files.length) {
+                        textureIndex = 0;
+                        createParticleSystem();
+                        alert(`已加载 ${loaded} 张照片，每 3 秒切换一次`);
+                    }
+                });
+            };
+            reader.readAsDataURL(files[i]);
+        }
+    });
+
+    // 定时切换照片
+    setInterval(() => {
+        if (userTextures.length > 1 && particleSystem) {
+            textureIndex = (textureIndex + 1) % userTextures.length;
+            particleSystem.material.uniforms.pointTexture.value = userTextures[textureIndex];
+        }
+    }, 3000);
+
+    // 切换模式
+    const btn = document.getElementById('toggle-mode-btn');
+    btn.addEventListener('click', () => {
+        currentMode = currentMode === 'heart' ? 'firework' : 'heart';
+        btn.innerText = currentMode === 'heart' ? '❤️ 切换: 烟花' : '🎆 切换: 爱心';
+        createParticleSystem();
+        controls.autoRotate = currentMode === 'heart';
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        if (currentMode === 'firework' && particleSystem) particleSystem.rotation.y += 0.002;
+        renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    init();
+</script>
+</body>
+</html>
