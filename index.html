@@ -5,62 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
     <title>七夕专属·3D粒子爱心</title>
     <style>
-        /* 核心适配：禁止微信/手机浏览器的橡皮筋回弹效果 */
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #000;
-            overscroll-behavior: none;
-            touch-action: none;
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #000;
+            overscroll-behavior: none; touch-action: none;
         }
-        #canvas-container {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-        /* 界面控件 */
+        #canvas-container { width: 100%; height: 100%; display: block; }
         #ui-controls {
-            position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            text-align: center;
-            z-index: 10;
-            width: 90%;
-            pointer-events: none; /* 让点击穿透，不影响旋转 */
+            position: absolute; bottom: 30px; left: 50%;
+            transform: translateX(-50%); text-align: center;
+            z-index: 10; width: 90%; pointer-events: none;
         }
-        /* 按钮样式：半透明磨砂感 */
         .btn {
             background: rgba(255, 20, 147, 0.4);
-            border: 1px solid rgba(255, 105, 180, 0.6);
-            color: white;
-            padding: 8px 16px;
-            margin: 0 5px;
-            border-radius: 20px;
-            font-size: 14px;
-            cursor: pointer;
-            backdrop-filter: blur(4px);
-            pointer-events: auto; /* 恢复按钮点击 */
-            text-shadow: 0 0 2px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 105, 180, 0.6); color: white;
+            padding: 8px 16px; margin: 0 5px; border-radius: 20px;
+            font-size: 14px; cursor: pointer; backdrop-filter: blur(4px);
+            pointer-events: auto; text-shadow: 0 0 2px rgba(0,0,0,0.5);
         }
         #image-upload { display: none; }
         #loading-text {
-            position: absolute;
-            top: 50%; left: 50%;
+            position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: rgba(255,255,255,0.5);
-            font-size: 12px;
-            pointer-events: none;
+            color: rgba(255,255,255,0.8); font-size: 14px;
+            pointer-events: none; font-family: sans-serif;
+            transition: opacity 0.5s;
         }
     </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://esm.sh/three@0.160.0",
+            "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 <body>
 
 <div id="canvas-container"></div>
-<div id="loading-text">资源加载中...</div>
+<div id="loading-text">资源正在极速加载中...</div>
 
 <div id="ui-controls">
     <input type="file" id="image-upload" multiple accept="image/*">
@@ -68,19 +52,22 @@
     <button class="btn" id="toggle-mode-btn">❤️ 切换: 烟花</button>
 </div>
 
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js"></script>
-
 <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     let scene, camera, renderer, controls, particleSystem;
     let particles;
-    const particleCount = 2500; // 粒子数量
-    let currentMode = 'heart'; // heart 或 firework
+    const particleCount = 2000; 
+    let currentMode = 'heart'; 
     let userTextures = []; 
     let textureIndex = 0;
+
+    // 错误捕获，如果加载失败会在屏幕显示
+    window.onerror = function(msg, url, line) {
+        document.getElementById('loading-text').innerText = "加载出错: " + msg;
+        document.getElementById('loading-text').style.color = "red";
+    };
 
     function init() {
         const container = document.getElementById('canvas-container');
@@ -91,34 +78,32 @@
         camera.position.z = 100;
 
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制像素比，提升手机性能
         renderer.setSize(window.innerWidth, window.innerHeight);
         container.appendChild(renderer.domElement);
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
         controls.rotateSpeed = 0.8;
         controls.enablePan = false;
         controls.autoRotate = true;
         controls.autoRotateSpeed = 1.5;
-
-        // 用户触摸时暂停自动旋转
         controls.addEventListener('start', () => { controls.autoRotate = false; });
 
-        document.getElementById('loading-text').style.display = 'none';
+        // 核心：隐藏加载文字
+        const loadingText = document.getElementById('loading-text');
+        if(loadingText) loadingText.style.opacity = 0;
+
         createParticleSystem();
         animate();
     }
 
-    // 核心算法：爱心形状
     function getHeartPosition(t) {
         const x = 16 * Math.pow(Math.sin(t), 3);
         const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
         return new THREE.Vector3(x * 2.5, y * 2.5 + 10, 0);
     }
 
-    // 核心算法：烟花球体
     function getSpherePosition(i) {
         const phi = Math.acos(-1 + (2 * i) / particleCount);
         const theta = Math.sqrt(particleCount * Math.PI) * phi;
@@ -147,13 +132,11 @@
             if (currentMode === 'heart') {
                 const t = (i / particleCount) * Math.PI * 2;
                 pos = getHeartPosition(t);
-                color.setHSL(0.95 + Math.random() * 0.05, 0.9, 0.6); // 粉红
+                color.setHSL(0.95 + Math.random() * 0.05, 0.9, 0.6);
             } else {
                 pos = getSpherePosition(i);
-                color.setHSL(Math.random(), 1.0, 0.6); // 彩色
+                color.setHSL(Math.random(), 1.0, 0.6);
             }
-
-            // 加一点随机扩散，让粒子不那么死板
             positions.push(pos.x + (Math.random()-0.5)*2, pos.y + (Math.random()-0.5)*2, pos.z + (Math.random()-0.5)*10);
             colors.push(color.r, color.g, color.b);
             sizes.push(currentMode === 'heart' ? 4.0 : 3.0);
@@ -163,7 +146,6 @@
         particles.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         particles.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
 
-        // 默认光点纹理
         const defaultTexture = (() => {
             const c = document.createElement('canvas'); c.width=32; c.height=32;
             const ctx = c.getContext('2d');
@@ -206,7 +188,6 @@
         scene.add(particleSystem);
     }
 
-    // 图片上传处理
     document.getElementById('image-upload').addEventListener('change', (e) => {
         const files = e.target.files;
         if (!files.length) return;
@@ -221,7 +202,7 @@
                     if (loaded === files.length) {
                         textureIndex = 0;
                         createParticleSystem();
-                        alert(`已加载 ${loaded} 张照片，每 3 秒切换一次`);
+                        alert(`已加载 ${loaded} 张照片`);
                     }
                 });
             };
@@ -229,7 +210,6 @@
         }
     });
 
-    // 定时切换照片
     setInterval(() => {
         if (userTextures.length > 1 && particleSystem) {
             textureIndex = (textureIndex + 1) % userTextures.length;
@@ -237,7 +217,6 @@
         }
     }, 3000);
 
-    // 切换模式
     const btn = document.getElementById('toggle-mode-btn');
     btn.addEventListener('click', () => {
         currentMode = currentMode === 'heart' ? 'firework' : 'heart';
@@ -259,6 +238,7 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
+    // 开始初始化
     init();
 </script>
 </body>
